@@ -98,12 +98,95 @@ function M.visual_range()
   return span.start_line, span.end_line
 end
 
-function M.input_comment(on_done)
-  vim.ui.input({ prompt = "Comment: " }, function(text)
-    if text and text ~= "" then
-      on_done(text)
+-- Pure: step through type_names from current_name, wrapping at either end.
+-- direction is 1 (Tab) or -1 (Shift-Tab); an unknown current starts over.
+function M.cycle_type(type_names, current_name, direction)
+  local count = #type_names
+  if count == 0 then
+    return nil
+  end
+  local index = 0
+  for position, name in ipairs(type_names) do
+    if name == current_name then
+      index = position
+      break
     end
-  end)
+  end
+  return type_names[((index + direction - 1) % count) + 1]
+end
+
+-- One prompt for text and type: type the comment, Tab / Shift-Tab switches
+-- the type (starting at initial_type), Enter saves, Esc cancels.
+-- on_done(text, comment_type) fires only for non-empty saved text.
+function M.input_typed_comment(type_names, initial_type, on_done)
+  if #type_names == 0 then
+    vim.ui.input({ prompt = "Comment: " }, function(text)
+      if text and text ~= "" then
+        on_done(text, nil)
+      end
+    end)
+    return
+  end
+  local current_type = initial_type or type_names[1]
+  local previous_win = vim.api.nvim_get_current_win()
+  local buf = vim.api.nvim_create_buf(false, true)
+  vim.bo[buf].bufhidden = "wipe"
+  local width = math.min(64, math.max(40, vim.o.columns - 10))
+  local function title_value()
+    return { { " Comment [" .. current_type .. "] ", "HerdrNvimCommentText" } }
+  end
+  local win = vim.api.nvim_open_win(buf, true, {
+    relative = "editor",
+    width = width,
+    height = 1,
+    row = math.max(0, math.floor((vim.o.lines - 5) / 2)),
+    col = math.max(0, math.floor((vim.o.columns - width) / 2)),
+    style = "minimal",
+    border = "rounded",
+    title = title_value(),
+    title_pos = "center",
+    footer = { { " Tab: switch type · Enter: save · Esc: cancel ", "Comment" } },
+    footer_pos = "center",
+  })
+  local finished = false
+  local function close()
+    if finished then
+      return
+    end
+    finished = true
+    pcall(vim.cmd, "stopinsert")
+    if vim.api.nvim_win_is_valid(win) then
+      vim.api.nvim_win_close(win, true)
+    end
+    if vim.api.nvim_win_is_valid(previous_win) then
+      vim.api.nvim_set_current_win(previous_win)
+    end
+  end
+  local function confirm()
+    local text = vim.api.nvim_buf_get_lines(buf, 0, 1, false)[1] or ""
+    close()
+    if text ~= "" then
+      on_done(text, current_type)
+    end
+  end
+  local function switch(direction)
+    return function()
+      current_type = M.cycle_type(type_names, current_type, direction)
+      if vim.api.nvim_win_is_valid(win) then
+        vim.api.nvim_win_set_config(win, { title = title_value() })
+      end
+    end
+  end
+  local function map(modes, lhs, action)
+    vim.keymap.set(modes, lhs, action, { buffer = buf, nowait = true, silent = true })
+  end
+  map("i", "<Tab>", switch(1))
+  map("i", "<S-Tab>", switch(-1))
+  map("i", "<CR>", confirm)
+  map("i", "<Esc>", close)
+  map("n", "<CR>", confirm)
+  map("n", "<Esc>", close)
+  vim.cmd("startinsert")
 end
 
 -- The callout rendered ABOVE the first annotated line. Above, not below: a note
@@ -152,7 +235,8 @@ function M.undecorate(id)
 end
 
 function M.comment_row(c)
-  return string.format("%s:%d-%d  %s", vim.fn.fnamemodify(c.file, ":t"), c.start_line, c.end_line, c.text)
+  local prefix = c.comment_type and ("[" .. c.comment_type .. "] ") or ""
+  return string.format("%s%s:%d-%d  %s", prefix, vim.fn.fnamemodify(c.file, ":t"), c.start_line, c.end_line, c.text)
 end
 
 -- Interactive comment list: a rounded floating box (with a shortcut-hint footer)

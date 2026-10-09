@@ -116,14 +116,14 @@ T.test("commands: :Herdr comment annotates the cursor line", function()
   comments.clear()
   commands.register()
   local ui = require("herdr-nvim.ui")
-  local orig = ui.input_comment
-  ui.input_comment = function(cb) cb("stub") end
+  local orig_typed = ui.input_typed_comment
+  ui.input_typed_comment = function(_, _, cb) cb("stub", "question") end
   local b = vim.api.nvim_create_buf(false, true)
   vim.api.nvim_buf_set_lines(b, 0, -1, false, { "one", "two", "three" })
   vim.api.nvim_set_current_buf(b)
   vim.api.nvim_win_set_cursor(0, { 2, 0 })
   vim.cmd("Herdr comment") -- no range → cursor line
-  ui.input_comment = orig
+  ui.input_typed_comment = orig_typed
   local list = comments.list()
   T.eq({ list[1].start_line, list[1].end_line }, { 2, 2 }, "default range is the cursor line")
 end)
@@ -132,13 +132,13 @@ T.test("commands: :<range>Herdr comment annotates the range", function()
   comments.clear()
   commands.register()
   local ui = require("herdr-nvim.ui")
-  local orig = ui.input_comment
-  ui.input_comment = function(cb) cb("stub") end
+  local orig_typed = ui.input_typed_comment
+  ui.input_typed_comment = function(_, _, cb) cb("stub", "feedback") end
   local b = vim.api.nvim_create_buf(false, true)
   vim.api.nvim_buf_set_lines(b, 0, -1, false, { "a", "b", "c", "d" })
   vim.api.nvim_set_current_buf(b)
   vim.cmd("1,3Herdr comment")
-  ui.input_comment = orig
+  ui.input_typed_comment = orig_typed
   local list = comments.list()
   T.eq({ list[1].start_line, list[1].end_line }, { 1, 3 })
 end)

@@ -136,8 +136,20 @@ herdr-nvim.setup({opts}) ~
     prefix = "<leader>a",     -- prefix for the default keymaps
     keymaps = true,           -- set false to bind your own
     clear_after_send = true,  -- clear comments after a successful send
+    types = {                 -- comment types, as name -> label
+      question = "question",
+      feedback = "feedback",
+    },
+    default_type = "feedback", -- untagged comments send as this type
   })
 <
+
+One prompt takes the comment text; Tab / Shift-Tab switches its type
+(starting at question), Enter saves, Esc cancels. Each sent item is
+prefixed `[label]` under the single shared header (`Notes from my
+editor`) and footer. Comments from before types existed (untagged)
+send as `default_type`. Types merge additively across setup() calls: a
+call can add names, never removes them.
 
 Suggested keymaps: ~
 
@@ -218,7 +230,9 @@ herdr-nvim.setup({opts}) ~
                                                     *herdr-nvim.comment_range()*
 herdr-nvim.comment_range({start_line}, {end_line}) ~
   Add a comment over a 1-indexed, inclusive line range in the current
-  buffer. Prompts for the comment text via vim.ui.input.
+  buffer. One prompt takes the text; Tab / Shift-Tab switches the
+  comment type (question or feedback, starting at question), Enter
+  saves, Esc cancels.
   Parameters: ~
     {start_line} (`integer`) First line of the range.
     {end_line} (`integer`) Last line of the range (inclusive).
@@ -258,7 +272,9 @@ herdr-nvim.delete_comment({comment}) ~
                                                          *herdr-nvim.send_all()*
 herdr-nvim.send_all({opts}) ~
   Send all pending comments to a chosen agent (picked via vim.ui.select),
-  preceded by the formatted prompt with file:line and git context. Each path
+  preceded by the formatted prompt with file:line and git context. Each item
+  is prefixed with its comment type (`[question]`, `[feedback]`); untagged
+  comments send as the configured default type. Each path
   is shortened against the receiving agent's cwd (a file outside it stays
   absolute), and a single line collapses to `path:12`, the same spelling as
   |herdr-nvim.ref_range()|. A span inside one line is `path:12:5-9`

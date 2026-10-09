@@ -4,8 +4,10 @@ local store = {} -- id -> { bufnr, extmark, text, created_at, has_cols }
 local next_id = 1
 
 -- span is { start_line = n, end_line = n, cols = { start_col, end_col }? }.
--- Columns are 0-indexed bytes and end-exclusive.
-function M.add(bufnr, span, text)
+-- Columns are 0-indexed bytes and end-exclusive. comment_type is the
+-- configured type name (e.g. "question"); nil leaves the comment untagged
+-- and the sender resolves it to the configured default type.
+function M.add(bufnr, span, text, comment_type)
   local id = next_id
   next_id = next_id + 1
   local has_cols = span.cols ~= nil
@@ -28,7 +30,7 @@ function M.add(bufnr, span, text)
       end_right_gravity = true,
     })
   end
-  store[id] = { bufnr = bufnr, extmark = extmark, text = text, created_at = os.time(), has_cols = has_cols }
+  store[id] = { bufnr = bufnr, extmark = extmark, text = text, comment_type = comment_type, created_at = os.time(), has_cols = has_cols }
   return id
 end
 
@@ -58,6 +60,7 @@ local function resolve(id)
     end_line = end_line,
     cols = cols,
     text = e.text,
+    comment_type = e.comment_type,
     created_at = e.created_at,
   }
 end

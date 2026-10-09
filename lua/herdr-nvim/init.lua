@@ -5,7 +5,41 @@ local agents = require("herdr-nvim.agents")
 local dispatch = require("herdr-nvim.dispatch")
 local ui = require("herdr-nvim.ui")
 
-M.config = { prefix = "<leader>a", keymaps = true, clear_after_send = true }
+M.config = {
+  prefix = "<leader>a",
+  keymaps = true,
+  clear_after_send = true,
+  -- Comment types, as name -> label. The label renders inline as `[label]`
+  -- on each sent item and in the comment list. Additive across setup() calls
+  -- (a call can add names, not remove them). Untagged comments resolve to
+  -- default_type at send time.
+  types = { question = "question", feedback = "feedback" },
+  default_type = "feedback",
+}
+
+-- Sorted configured type names, for a deterministic picker order.
+function M.type_names()
+  local names = {}
+  for name in pairs(M.config.types) do
+    names[#names + 1] = name
+  end
+  table.sort(names)
+  return names
+end
+
+-- The effective type for a stored comment_type: the stored name when it is
+-- still configured, otherwise the configured default (or the first type
+-- when even the default is unconfigured).
+function M.resolve_type(comment_type)
+  if comment_type and M.config.types[comment_type] then
+    return comment_type
+  end
+  local default_type = M.config.default_type
+  if default_type and M.config.types[default_type] then
+    return default_type
+  end
+  return M.type_names()[1]
+end
 
 local function map(mode, lhs, rhs, desc)
   if vim.fn.maparg(vim.api.nvim_replace_termcodes(lhs, true, true, true), mode) ~= "" then
@@ -36,10 +70,22 @@ end
 
 -- Internal primitive behind comment_line(), comment_selection(), and :Herdr comment.
 -- span is { start_line = n, end_line = n, cols = { start_col, end_col }? }.
+-- The type a fresh comment starts at: question when configured, else the
+-- send-time default.
+function M.initial_type()
+  if M.config.types["question"] then
+    return "question"
+  end
+  return M.resolve_type(nil)
+end
+
 local function comment_span(span)
   local bufnr = vim.api.nvim_get_current_buf()
-  ui.input_comment(function(text)
-    local id = comments.add(bufnr, span, text)
+  -- One prompt: type the text, Tab switches the type. Cancelling (or empty
+  -- text) creates nothing; comments that predate types still resolve to the
+  -- default type at send.
+  ui.input_typed_comment(M.type_names(), M.initial_type(), function(text, comment_type)
+    local id = comments.add(bufnr, span, text, comment_type)
     ui.decorate(id)
   end)
 end
@@ -144,7 +190,7 @@ function M.send_all(opts)
   end
   local items = {}
   for _, c in ipairs(list) do
-    table.insert(items, { comment = c, snippet = comments.snippet(c.id) })
+    table.insert(items, { comment = c, snippet = comments.snippet(c.id), comment_type = M.resolve_type(c.comment_type) })
   end
   local first_file = list[1].file
   local cwd = first_file ~= "" and vim.fn.fnamemodify(first_file, ":h") or nil

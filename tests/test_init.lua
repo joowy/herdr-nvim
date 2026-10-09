@@ -13,32 +13,35 @@ end)
 T.test("init: comment_line adds a decorated comment via stubbed input", function()
   comments.clear()
   local ui = require("herdr-nvim.ui")
-  local orig = ui.input_comment
-  ui.input_comment = function(cb) cb("stub comment") end
+  local orig_typed = ui.input_typed_comment
+  ui.input_typed_comment = function(_, _, cb) cb("stub comment", "question") end
   local b = vim.api.nvim_create_buf(false, true)
   vim.api.nvim_buf_set_lines(b, 0, -1, false, { "one", "two" })
   vim.api.nvim_set_current_buf(b)
   vim.api.nvim_win_set_cursor(0, { 2, 0 })
   hn.comment_line()
-  ui.input_comment = orig
+  ui.input_typed_comment = orig_typed
   local l = comments.list()
   T.eq(#l, 1)
-  T.eq({ l[1].start_line, l[1].text }, { 2, "stub comment" })
+  T.eq({ l[1].start_line, l[1].text, l[1].comment_type }, { 2, "stub comment", "question" })
 end)
 
 T.test("init: comment_range keeps the public line-range API", function()
   comments.clear()
   local ui = require("herdr-nvim.ui")
   local orig = ui.input_comment
-  ui.input_comment = function(cb) cb("stub range") end
+  local orig_typed = ui.input_typed_comment
+  ui.input_typed_comment = function(_, _, cb) cb("stub range", "feedback") end
   local b = vim.api.nvim_create_buf(false, true)
   vim.api.nvim_buf_set_lines(b, 0, -1, false, { "one", "two", "three", "four" })
   vim.api.nvim_set_current_buf(b)
   hn.comment_range(2, 3)
-  ui.input_comment = orig
+  ui.input_typed_comment = orig_typed
   local l = comments.list()
   T.eq(#l, 1)
-  T.eq({ l[1].start_line, l[1].end_line, l[1].text }, { 2, 3, "stub range" })
+  T.eq({ l[1].start_line, l[1].end_line, l[1].text, l[1].comment_type }, { 2, 3, "stub range", "feedback" })
+  T.eq(l[1].cols, nil)
+  T.eq(comments.snippet(l[1].id), { "two", "three" })
   T.eq(l[1].cols, nil)
   T.eq(comments.snippet(l[1].id), { "two", "three" })
 end)
@@ -47,14 +50,15 @@ T.test("init: comment_selection uses the visual marks", function()
   comments.clear()
   local ui = require("herdr-nvim.ui")
   local orig = ui.input_comment
-  ui.input_comment = function(cb) cb("stub sel") end
+  local orig_typed = ui.input_typed_comment
+  ui.input_typed_comment = function(_, _, cb) cb("stub sel", "feedback") end
   local b = vim.api.nvim_create_buf(false, true)
   vim.api.nvim_buf_set_lines(b, 0, -1, false, { "a", "b", "c", "d" })
   vim.api.nvim_set_current_buf(b)
   vim.api.nvim_buf_set_mark(b, "<", 2, 0, {})
   vim.api.nvim_buf_set_mark(b, ">", 4, 0, {})
   hn.comment_selection()
-  ui.input_comment = orig
+  ui.input_typed_comment = orig_typed
   local list = comments.list()
   T.eq({ list[1].start_line, list[1].end_line }, { 2, 4 })
 end)
@@ -63,14 +67,15 @@ T.test("init: comment_selection normalizes reversed marks", function()
   comments.clear()
   local ui = require("herdr-nvim.ui")
   local orig = ui.input_comment
-  ui.input_comment = function(cb) cb("stub sel") end
+  local orig_typed = ui.input_typed_comment
+  ui.input_typed_comment = function(_, _, cb) cb("stub sel", "feedback") end
   local b = vim.api.nvim_create_buf(false, true)
   vim.api.nvim_buf_set_lines(b, 0, -1, false, { "a", "b", "c", "d" })
   vim.api.nvim_set_current_buf(b)
   vim.api.nvim_buf_set_mark(b, "<", 4, 0, {})
   vim.api.nvim_buf_set_mark(b, ">", 2, 0, {})
   hn.comment_selection()
-  ui.input_comment = orig
+  ui.input_typed_comment = orig_typed
   local list = comments.list()
   T.eq({ list[1].start_line, list[1].end_line }, { 2, 4 })
 end)
@@ -96,6 +101,20 @@ T.test("init: edit_comment updates text and refreshes its callout", function()
     if mark[4].virt_lines then callout_text = mark[4].virt_lines[1][2][1] end
   end
   T.ok(callout_text and callout_text:find("new text", 1, true), "callout shows edited text")
+end)
+
+T.test("init: a cancelled comment prompt creates nothing", function()
+  comments.clear()
+  local ui = require("herdr-nvim.ui")
+  local orig_typed = ui.input_typed_comment
+  ui.input_typed_comment = function() end -- user pressed Esc: no callback
+  local b = vim.api.nvim_create_buf(false, true)
+  vim.api.nvim_buf_set_lines(b, 0, -1, false, { "one", "two" })
+  vim.api.nvim_set_current_buf(b)
+  vim.api.nvim_win_set_cursor(0, { 1, 0 })
+  hn.comment_line()
+  ui.input_typed_comment = orig_typed
+  T.eq(comments.list(), {})
 end)
 
 T.test("init: git context returns nil when git cannot spawn", function()
@@ -128,8 +147,10 @@ T.test("init: send_all formats, dispatches, clears", function()
   ui.pick_agent, dispatch.send, agents.list = o1, o2, o3
 
   T.eq(sent[1], "wZ:p9")
-  T.ok(sent[2]:find("1. hn-send.lua:1\n", 1, true), "path shortened against the agent's cwd")
+  T.ok(sent[2]:find("Notes from my editor", 1, true), "single shared header")
+  T.ok(sent[2]:find("1. [feedback] hn-send.lua:1\n", 1, true), "untagged comment resolves to the default type; path shortened against the agent's cwd")
   T.ok(sent[2]:find("> alpha", 1, true))
+  T.ok(sent[2]:find("answer the questions and describe what you changed", 1, true), "single shared footer")
   T.eq(sent[3].submit, false)
   T.eq(comments.list(), {}, "clear_after_send default clears comments")
 end)
@@ -231,6 +252,57 @@ T.test("init: send_all retains comments when dispatch.send fails", function()
   ui.pick_agent, dispatch.send, agents.list = o1, o2, o3
 
   T.eq(#comments.list(), 1, "comments must be retained after a failed send")
+end)
+
+T.test("init: resolve_type keeps configured names and falls back to the default", function()
+  local saved = vim.deepcopy(hn.config)
+  hn.setup({ types = { question = "question", feedback = "feedback" }, default_type = "feedback" })
+  T.eq(hn.resolve_type("question"), "question")
+  T.eq(hn.resolve_type(nil), "feedback", "untagged resolves to the default")
+  T.eq(hn.resolve_type("removed"), "feedback", "a type missing from the config resolves to the default")
+  T.eq(hn.type_names(), { "feedback", "question" }, "picker order is deterministic")
+  hn.config = saved
+end)
+
+T.test("init: fresh comments start at question when configured", function()
+  local saved = vim.deepcopy(hn.config)
+  hn.setup({ types = { question = "question", feedback = "feedback" }, default_type = "feedback" })
+  T.eq(hn.initial_type(), "question")
+  hn.config.types = { feedback = "feedback" }
+  T.eq(hn.initial_type(), "feedback", "without question, fall back to the default")
+  hn.config = saved
+end)
+
+T.test("init: setup adds custom types and mixed sends keep each label", function()
+  comments.clear()
+  local saved = vim.deepcopy(hn.config)
+  hn.setup({ types = { idea = "idea" }, default_type = "feedback" })
+  T.eq(hn.resolve_type("idea"), "idea")
+  T.eq(hn.resolve_type("question"), "question", "setup merges custom types additively")
+
+  local b = vim.api.nvim_create_buf(false, true)
+  vim.api.nvim_buf_set_lines(b, 0, -1, false, { "alpha", "beta" })
+  vim.api.nvim_buf_set_name(b, "/repo/mixed.lua")
+  comments.add(b, { start_line = 1, end_line = 1 }, "why?", "question")
+  comments.add(b, { start_line = 2, end_line = 2 }, "maybe", "idea")
+  comments.add(b, { start_line = 2, end_line = 2 }, "legacy")
+
+  local ui = require("herdr-nvim.ui")
+  local dispatch = require("herdr-nvim.dispatch")
+  local agents = require("herdr-nvim.agents")
+  local sent = {}
+  local o1, o2, o3 = ui.pick_agent, dispatch.send, agents.list
+  ui.pick_agent = function(_, cb) cb({ pane_id = "wZ:p9", title = "pi", status = "idle" }) end
+  dispatch.send = function(_, text) sent = { text }; return true end
+  agents.list = function() return { { pane_id = "wZ:p9", title = "pi", status = "idle", cwd = "/repo" } } end
+
+  hn.send_all({ submit = false })
+  ui.pick_agent, dispatch.send, agents.list = o1, o2, o3
+  hn.config = saved
+
+  T.ok(sent[1]:find("1. [question] mixed.lua:1\n", 1, true))
+  T.ok(sent[1]:find("2. [idea] mixed.lua:2\n", 1, true))
+  T.ok(sent[1]:find("3. [feedback] mixed.lua:2\n", 1, true), "untagged legacy comment sends as the default type")
 end)
 
 T.test("init: statusline reflects pending comment count", function()

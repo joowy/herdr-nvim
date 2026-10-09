@@ -141,7 +141,7 @@ tab-complete):
 
 | Keymap | Command | Action |
 | --- | --- | --- |
-| `<leader>ac` | `:Herdr comment` / `comment_selection()` | comment the current line / selection; visual `v` keymaps using `comment_selection()` send only that span (the command also takes whole-line ranges: `:5,10Herdr comment`) |
+| `<leader>ac` | `:Herdr comment` / `comment_selection()` | comment the current line / selection; one prompt takes the text and `Tab` / `Shift-Tab` switches its type (question or feedback, starting at question); `Enter` saves, `Esc` cancels. Visual `v` keymaps using `comment_selection()` send only that span (the command also takes whole-line ranges: `:5,10Herdr comment`) |
 | `<leader>al` | `:Herdr list` | list comments (float): hover to jump, `⏎` edit, `d` delete |
 | `<leader>as` | `:Herdr send` | paste all comments into the agent's input |
 | `<leader>aS` | `:Herdr submit` | send all comments to the agent (auto-submits) |
@@ -160,6 +160,12 @@ Or call the Lua API directly (`comment_line`, `comment_selection`,
 `comment_range(s, e)`, `list_comments`, `send_all{ submit = false|true }`,
 `ref_line`, `ref_selection`, `ref_range(s, e)`).
 See `:help herdr-nvim` for the full reference.
+
+Each comment carries a type (`question` or `feedback` by default,
+configurable via `setup{}`). The send lists every item under one shared
+header (`Notes from my editor`) with its type as an inline `[label]`, so a
+single footer covers both questions and change requests. Comments from
+before types existed send as the configured `default_type`.
 
 Sending skips the picker when the target is obvious: the lone agent in the
 workspace, or the single agent sharing this tab (the sibling pane). The picker
@@ -188,6 +194,12 @@ require("herdr-nvim").setup({
   prefix = "<leader>a",     -- keymap prefix
   keymaps = true,           -- set false to define your own
   clear_after_send = true,  -- comments are ephemeral by design
+  -- Comment types, as name -> label. One prompt takes the text; Tab /
+  -- Shift-Tab switches the type (starts at question). Each sent item is
+  -- prefixed `[label]`. Untagged comments send as default_type. Additive
+  -- across setup() calls (adds names, never removes).
+  types = { question = "question", feedback = "feedback" },
+  default_type = "feedback",
 })
 ```
 

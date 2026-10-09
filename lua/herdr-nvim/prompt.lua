@@ -1,20 +1,23 @@
 local M = {}
 
+-- One header and footer for every send, worded to cover both questions and
+-- feedback. Each item carries its type as an inline `[label]`; items without
+-- a resolved type render as feedback (the default type).
 function M.format(items, opts)
   opts = opts or {}
-  local header = "Code review comments from my editor"
+  local header = "Notes from my editor"
   if opts.header_context then header = header .. " (" .. opts.header_context .. ")" end
   local lines = { header .. ":", "" }
   for i, item in ipairs(items) do
     local c = item.comment
-    table.insert(lines, string.format("%d. %s", i, M.location(c, opts.cwd)))
+    table.insert(lines, string.format("%d. [%s] %s", i, item.comment_type or "feedback", M.location(c, opts.cwd)))
     for j = 1, math.min(3, #(item.snippet or {})) do
       table.insert(lines, "   > " .. item.snippet[j])
     end
     table.insert(lines, "   Comment: " .. c.text)
     table.insert(lines, "")
   end
-  table.insert(lines, "Please address each comment. Reply with what you changed per item.")
+  table.insert(lines, "Reply to each item: answer the questions and describe what you changed for the rest.")
   return table.concat(lines, "\n")
 end
 

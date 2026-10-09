@@ -125,9 +125,54 @@ T.test("ui: one-line decoration marks a single line", function()
   T.eq(bars, 1)
 end)
 
+T.test("ui: cycle_type wraps in both directions", function()
+  local names = { "feedback", "idea", "question" }
+  T.eq(ui.cycle_type(names, "feedback", 1), "idea")
+  T.eq(ui.cycle_type(names, "question", 1), "feedback", "Tab past the end wraps")
+  T.eq(ui.cycle_type(names, "feedback", -1), "question", "Shift-Tab past the start wraps")
+  T.eq(ui.cycle_type(names, "unknown", 1), "feedback", "unknown current starts over")
+  T.eq(ui.cycle_type({}, "feedback", 1), nil)
+end)
+
+T.test("ui: typed input without types falls back to a plain prompt", function()
+  local orig = vim.ui.input
+  vim.ui.input = function(_, cb) cb("plain") end
+  local got
+  ui.input_typed_comment({}, nil, function(text, comment_type) got = { text, comment_type } end)
+  vim.ui.input = orig
+  T.eq(got, { "plain" })
+end)
+
+T.test("ui: typed input saves through the real float mappings", function()
+  local b = vim.api.nvim_create_buf(false, true)
+  vim.api.nvim_buf_set_lines(b, 0, -1, false, { "code" })
+  vim.api.nvim_set_current_buf(b)
+  local got
+  ui.input_typed_comment({ "feedback", "question" }, "question", function(text, comment_type)
+    got = { text, comment_type }
+  end)
+  -- The prompt float is now current: fill it and hit its real <CR> mapping.
+  local prompt_buf = vim.api.nvim_get_current_buf()
+  T.ok(prompt_buf ~= b, "prompt opens in its own buffer")
+  vim.api.nvim_buf_set_lines(prompt_buf, 0, -1, false, { "hello" })
+  local enter
+  for _, m in ipairs(vim.api.nvim_buf_get_keymap(prompt_buf, "i")) do
+    if m.lhs == "<CR>" then enter = m.callback end
+  end
+  T.ok(enter ~= nil, "expected a buffer-local insert <CR> mapping")
+  enter()
+  T.eq(got, { "hello", "question" })
+  T.eq(vim.api.nvim_get_current_buf(), b, "focus returns to the code buffer")
+end)
+
 T.test("ui: comment row format", function()
   T.eq(ui.comment_row({ file = "/a/b/mod.rs", start_line = 3, end_line = 9, text = "tidy" }),
     "mod.rs:3-9  tidy")
+end)
+
+T.test("ui: comment row prefixes the type when tagged", function()
+  T.eq(ui.comment_row({ file = "/a/b/mod.rs", start_line = 3, end_line = 3, text = "why?", comment_type = "question" }),
+    "[question] mod.rs:3-3  why?")
 end)
 
 local function list_keymap(buf, lhs)
