@@ -42,7 +42,9 @@ function M.resolve_type(comment_type)
 end
 
 local function map(mode, lhs, rhs, desc)
-  if vim.fn.maparg(vim.api.nvim_replace_termcodes(lhs, true, true, true), mode) ~= "" then
+  local existing = vim.fn.maparg(lhs, mode, false, true)
+  local ours = existing.desc and vim.startswith(existing.desc, "herdr-nvim:")
+  if not ours and vim.fn.maparg(vim.api.nvim_replace_termcodes(lhs, true, true, true), mode) ~= "" then
     vim.notify("herdr-nvim: not overriding existing map " .. lhs, vim.log.levels.WARN)
     return
   end

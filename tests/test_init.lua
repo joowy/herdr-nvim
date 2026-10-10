@@ -10,6 +10,70 @@ T.test("init: setup creates guarded keymaps", function()
   vim.keymap.del("n", " ac")
 end)
 
+T.test("init: repeat setup silently rebinds its own maps", function()
+  vim.g.mapleader = " "
+  local savedConfiguration = vim.deepcopy(hn.config)
+  local prefix = "<leader>h"
+  hn.setup({ prefix = prefix, keymaps = true })
+  T.ok(vim.fn.maparg(" hc", "n") ~= "", "precondition: own map is bound")
+
+  local warns = {}
+  local originalNotify = vim.notify
+  vim.notify = function(message, level)
+    if level == vim.log.levels.WARN then
+      table.insert(warns, message)
+    end
+  end
+  hn.setup({ prefix = prefix, keymaps = true })
+  vim.notify = originalNotify
+
+  T.eq(warns, {}, "repeat setup must not warn for its own maps")
+  T.ok(vim.fn.maparg(" hc", "n") ~= "", "own map is still bound after rebind")
+  T.ok(vim.fn.maparg(" hl", "n") ~= "", "every own map survives the rebind")
+
+  hn.config = savedConfiguration
+  pcall(vim.keymap.del, "n", " hc")
+  pcall(vim.keymap.del, "x", " hc")
+  pcall(vim.keymap.del, "n", " hl")
+  pcall(vim.keymap.del, "n", " hs")
+  pcall(vim.keymap.del, "n", " hS")
+  pcall(vim.keymap.del, "x", " hi")
+  pcall(vim.keymap.del, "n", " hi")
+end)
+
+T.test("init: repeat setup still warns for user-owned maps", function()
+  vim.g.mapleader = " "
+  local savedConfiguration = vim.deepcopy(hn.config)
+  local prefix = "<leader>h"
+  hn.setup({ prefix = prefix, keymaps = true })
+  -- The user takes over one lhs after our first setup.
+  pcall(vim.keymap.del, "n", " hl")
+  vim.keymap.set("n", " hl", "<cmd>echo 'user owns this'<cr>")
+
+  local warns = {}
+  local originalNotify = vim.notify
+  vim.notify = function(message, level)
+    if level == vim.log.levels.WARN then
+      table.insert(warns, message)
+    end
+  end
+  hn.setup({ prefix = prefix, keymaps = true })
+  vim.notify = originalNotify
+
+  T.eq(#warns, 1, "user-owned lhs must still warn")
+  T.ok(warns[1]:find("hl", 1, true), "warning names the contested lhs")
+  T.ok(vim.fn.maparg(" hl", "n"):match("user owns this"), "must not clobber user map")
+
+  hn.config = savedConfiguration
+  pcall(vim.keymap.del, "n", " hl")
+  pcall(vim.keymap.del, "n", " hc")
+  pcall(vim.keymap.del, "x", " hc")
+  pcall(vim.keymap.del, "n", " hs")
+  pcall(vim.keymap.del, "n", " hS")
+  pcall(vim.keymap.del, "x", " hi")
+  pcall(vim.keymap.del, "n", " hi")
+end)
+
 T.test("init: comment_line adds a decorated comment via stubbed input", function()
   comments.clear()
   local ui = require("herdr-nvim.ui")
