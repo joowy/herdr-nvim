@@ -41,14 +41,23 @@ function M.resolve_type(comment_type)
   return M.type_names()[1]
 end
 
+-- Callback of each default keymap this plugin set, by mode and keys. setup()
+-- can run more than once (the sidebar daemon calls it again after the user's
+-- config did, #49): a map that is still ours is replaced quietly, while any
+-- other map on those keys belongs to the user and is left alone.
+local own_maps = {}
+
 local function map(mode, lhs, rhs, desc)
-  local existing = vim.fn.maparg(lhs, mode, false, true)
-  local ours = existing.desc and vim.startswith(existing.desc, "herdr-nvim:")
-  if not ours and vim.fn.maparg(vim.api.nvim_replace_termcodes(lhs, true, true, true), mode) ~= "" then
+  local keys = vim.api.nvim_replace_termcodes(lhs, true, true, true)
+  local id = mode .. keys
+  local existing = vim.fn.maparg(keys, mode, false, true)
+  local ours = own_maps[id] ~= nil and existing.callback == own_maps[id]
+  if not vim.tbl_isempty(existing) and not ours then
     vim.notify("herdr-nvim: not overriding existing map " .. lhs, vim.log.levels.WARN)
     return
   end
   vim.keymap.set(mode, lhs, rhs, { desc = desc })
+  own_maps[id] = rhs
 end
 
 function M.setup(config)
